@@ -34,7 +34,7 @@ public:
     ~deviceBO() {
         HIP_ASSERT(hipFree(_buffer));
     }
-    T *get() {
+    T *get() const {
         return _buffer;
     }
 };
