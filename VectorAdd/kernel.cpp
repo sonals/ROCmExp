@@ -4,9 +4,17 @@
 #include <cstdio>
 #include "hip/hip_runtime.h"
 
-extern "C" __global__ void
-vectoradd(float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ c)
+#ifdef __cplusplus
+extern "C" {
+#endif
+__global__ void
+vectoradd(float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ c);
+#ifdef __cplusplus
+}
+#endif
 
+__global__ void
+vectoradd(float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ c)
 {
     int i = hipBlockDim_x * hipBlockIdx_x + hipThreadIdx_x;
     a[i] = b[i] + c[i];
