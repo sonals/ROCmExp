@@ -28,8 +28,8 @@ static const int THREADS_PER_BLOCK_X = 32;
 template<typename T> class deviceBO {
     T *_buffer;
 public:
-    deviceBO(size_t size) {
-        HIP_ASSERT(hipMalloc((void**)_buffer, size));
+    deviceBO(size_t size) : _buffer(nullptr) {
+        HIP_ASSERT(hipMalloc((void**)&_buffer, size * sizeof(T)));
     }
     ~deviceBO() {
         HIP_ASSERT(hipFree(_buffer));
@@ -62,30 +62,29 @@ int main() {
         hostA[i] = 0;
     }
 
-    float* deviceA;
-    float* deviceB;
-    float* deviceC;
+    deviceBO<float> deviceA(SIZE);
+    deviceBO<float> deviceB(SIZE);
+    deviceBO<float> deviceC(SIZE);
 
-    HIP_ASSERT(hipMalloc((void**)&deviceA, SIZE));
-    HIP_ASSERT(hipMalloc((void**)&deviceB, SIZE));
-    HIP_ASSERT(hipMalloc((void**)&deviceC, SIZE));
+    HIP_ASSERT(hipMemcpy(deviceB.get(), hostB.get(), SIZE, hipMemcpyHostToDevice));
+    HIP_ASSERT(hipMemcpy(deviceC.get(), hostC.get(), SIZE, hipMemcpyHostToDevice));
 
-    HIP_ASSERT(hipMemcpy(deviceB, hostB.get(), SIZE, hipMemcpyHostToDevice));
-    HIP_ASSERT(hipMemcpy(deviceC, hostC.get(), SIZE, hipMemcpyHostToDevice));
-
-    void *args[] = {&deviceA, &deviceB, &deviceC};
+    void *tmpA = deviceA.get();
+    void *tmpB = deviceB.get();
+    void *tmpC = deviceC.get();
+    void *args[] = {&tmpA, &tmpB, &tmpC};
     HIP_ASSERT(hipModuleLaunchKernel(function,
                                      LEN/THREADS_PER_BLOCK_X, 1, 1,
                                      THREADS_PER_BLOCK_X, 1, 1,
                                      0, 0, args, 0));
 
-    HIP_ASSERT(hipMemcpy(hostA.get(), deviceA, SIZE, hipMemcpyDeviceToHost));
+    HIP_ASSERT(hipMemcpy(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost));
 
     int errors = 0;
     for (int i = 0; i < LEN; i++) {
         if (hostA[i] == (hostB[i] + hostC[i]))
             continue;
-        if (deviceA[i] == (deviceB[i] + deviceC[i]))
+        if (deviceA.get()[i] == (deviceB.get()[i] + deviceC.get()[i]))
             continue;
         errors = 1;
         break;
@@ -94,10 +93,6 @@ int main() {
         std::cout << "FAILED" << std::endl;
     else
         std::cout << "PASSED" << std::endl;
-
-    HIP_ASSERT(hipFree(deviceA));
-    HIP_ASSERT(hipFree(deviceB));
-    HIP_ASSERT(hipFree(deviceC));
 
     return errors;
 }
