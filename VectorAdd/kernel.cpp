@@ -8,14 +8,14 @@
 extern "C" {
 #endif
 __global__ void
-vectoradd(float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ c);
+vectoradd(float* __restrict__ aaa, const float* __restrict__ bbb, const float* __restrict__ ccc);
 #ifdef __cplusplus
 }
 #endif
 
 __global__ void
-vectoradd(float* __restrict__ a, const float* __restrict__ b, const float* __restrict__ c)
+vectoradd(float* __restrict__ aaa, const float* __restrict__ bbb, const float* __restrict__ ccc)
 {
     int i = hipBlockDim_x * hipBlockIdx_x + hipThreadIdx_x;
-    a[i] = b[i] + c[i];
+    aaa[i] = bbb[i] + ccc[i];
 }

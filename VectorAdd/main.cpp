@@ -25,7 +25,7 @@
 static const int LEN = 0x100000;
 static const int SIZE = LEN * sizeof(float);
 static const int THREADS_PER_BLOCK_X = 32;
-static const int LOOP = 100000;
+static const int LOOP = 1000;
 
 class Timer {
     std::chrono::high_resolution_clock::time_point mTimeStart;
@@ -54,6 +54,11 @@ public:
     T *get() const {
         return _buffer;
     }
+
+    T *&get() {
+        return _buffer;
+    }
+
 };
 
 int main() {
@@ -86,38 +91,34 @@ int main() {
     HIP_ASSERT(hipMemcpy(deviceB.get(), hostB.get(), SIZE, hipMemcpyHostToDevice));
     HIP_ASSERT(hipMemcpy(deviceC.get(), hostC.get(), SIZE, hipMemcpyHostToDevice));
 
-    void *tmpA0 = deviceA.get();
-    void *tmpB0 = deviceB.get();
-    void *tmpC0 = deviceC.get();
-    void *args0[] = {&tmpA0, &tmpB0, &tmpC0};
+    void *argsD[] = {&deviceA.get(), &deviceB.get(), &deviceC.get()};
 
     std::cout << "Run " << KERNELNAME << ' ' << LOOP << " times using device resident memory" << std::endl;
+    std::cout << "Host buffers: " << hostA.get() << ", "
+              << hostB.get() << ", " << hostC.get() << std::endl;
+    std::cout << "Device buffers: " << deviceA.get() << ", "
+              << deviceB.get() << ", " << deviceC.get() << std::endl;
+
     Timer timer;
     for (int i = 0; i < LOOP; i++) {
         HIP_ASSERT(hipModuleLaunchKernel(function,
                                          LEN/THREADS_PER_BLOCK_X, 1, 1,
                                          THREADS_PER_BLOCK_X, 1, 1,
-                                         0, 0, args0, 0));
+                                         0, 0, argsD, nullptr));
     }
     HIP_ASSERT(hipDeviceSynchronize());
-    auto timer_stop0 = timer.stop();
-    std::cout << '(' << LOOP << ", " << timer_stop0 << " ms, " << (LOOP * 1000.0)/timer_stop0
+    auto delayD = timer.stop();
+    std::cout << '(' << LOOP << " loops, " << delayD << " ms, " << (LOOP * 1000.0)/delayD
               << " ops/s)" << std::endl;
     HIP_ASSERT(hipMemcpy(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost));
 
     int errors = 0;
     for (int i = 0; i < LEN; i++) {
         if (hostA[i] != (hostB[i] + hostC[i])) {
-            errors = 1;
-            break;
-        }
-        // This crashes (SIGSEGV) for some reasons
-        if (deviceA.get()[i] != (deviceB.get()[i] + deviceC.get()[i])) {
-            errors = 1;
+            errors++;
             break;
         }
         hostA[i] = 0.0;
-        break;
     }
 
     if (errors)
@@ -125,21 +126,33 @@ int main() {
     else
         std::cout << "PASSED" << std::endl;
 
+    HIP_ASSERT(hipHostRegister(hostA.get(), SIZE, hipHostRegisterDefault));
+    HIP_ASSERT(hipHostRegister(hostB.get(), SIZE, hipHostRegisterDefault));
+    HIP_ASSERT(hipHostRegister(hostC.get(), SIZE, hipHostRegisterDefault));
+
+    void *tmpA1 = nullptr;
+    void *tmpB1 = nullptr;
+    void *tmpC1 = nullptr;
+
+    HIP_ASSERT(hipHostGetDevicePointer(&tmpA1, hostA.get(), 0));
+    HIP_ASSERT(hipHostGetDevicePointer(&tmpB1, hostB.get(), 0));
+    HIP_ASSERT(hipHostGetDevicePointer(&tmpC1, hostC.get(), 0));
+
     std::cout << "Run " << KERNELNAME << ' ' << LOOP << " times using host resident memory" << std::endl;
-    void *tmpA1 = hostA.get();
-    void *tmpB1 = hostB.get();
-    void *tmpC1 = hostC.get();
-    void *args1[] = {&tmpA1, &tmpB1, &tmpC1};
+    std::cout << "Device mapped host buffers: " << tmpA1 << ", "
+              << tmpB1 << ", " << tmpC1 << std::endl;
+
+    void *argsH[] = {&tmpA1, &tmpB1, &tmpC1};
     timer.reset();
     for (int i = 0; i < LOOP; i++) {
         HIP_ASSERT(hipModuleLaunchKernel(function,
                                          LEN/THREADS_PER_BLOCK_X, 1, 1,
                                          THREADS_PER_BLOCK_X, 1, 1,
-                                         0, 0, args1, 0));
+                                         0, 0, argsH, nullptr));
     }
     HIP_ASSERT(hipDeviceSynchronize());
-    auto timer_stop1 = timer.stop();
-    std::cout << '(' << LOOP << ", " << timer_stop1 << " ms, " << (LOOP * 1000.0)/timer_stop1
+    auto delayH = timer.stop();
+    std::cout << '(' << LOOP << " loops, " << delayH << " ms, " << (LOOP * 1000.0)/delayH
               << " ops/s)" << std::endl;
 
     // The following host memory test fails
@@ -149,6 +162,10 @@ int main() {
         errors = 1;
         break;
     }
+
+    HIP_ASSERT(hipHostUnregister(hostC.get()));
+    HIP_ASSERT(hipHostUnregister(hostB.get()));
+    HIP_ASSERT(hipHostUnregister(hostA.get()));
 
     if (errors)
         std::cout << "FAILED" << std::endl;
