@@ -42,6 +42,7 @@ public:
     }
 };
 
+// Abstraction of device buffer so we can do automatic buffer dealocation (RAII)
 template<typename T> class deviceBO {
     T *_buffer;
 public:
@@ -88,6 +89,7 @@ int main() {
     deviceBO<float> deviceB(LEN);
     deviceBO<float> deviceC(LEN);
 
+    // Sync host buffers to device
     HIP_ASSERT(hipMemcpy(deviceB.get(), hostB.get(), SIZE, hipMemcpyHostToDevice));
     HIP_ASSERT(hipMemcpy(deviceC.get(), hostC.get(), SIZE, hipMemcpyHostToDevice));
 
@@ -110,6 +112,8 @@ int main() {
     auto delayD = timer.stop();
     std::cout << '(' << LOOP << " loops, " << delayD << " ms, " << (LOOP * 1000.0)/delayD
               << " ops/s)" << std::endl;
+
+    // Sync device output buffer to host
     HIP_ASSERT(hipMemcpy(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost));
 
     int errors = 0;
@@ -126,6 +130,7 @@ int main() {
     else
         std::cout << "PASSED" << std::endl;
 
+    // Register our buffer wit ROCm so it is pinned and prepare for access by device
     HIP_ASSERT(hipHostRegister(hostA.get(), SIZE, hipHostRegisterDefault));
     HIP_ASSERT(hipHostRegister(hostB.get(), SIZE, hipHostRegisterDefault));
     HIP_ASSERT(hipHostRegister(hostC.get(), SIZE, hipHostRegisterDefault));
@@ -134,6 +139,7 @@ int main() {
     void *tmpB1 = nullptr;
     void *tmpC1 = nullptr;
 
+    // Map the host buffer to device address space
     HIP_ASSERT(hipHostGetDevicePointer(&tmpA1, hostA.get(), 0));
     HIP_ASSERT(hipHostGetDevicePointer(&tmpB1, hostB.get(), 0));
     HIP_ASSERT(hipHostGetDevicePointer(&tmpC1, hostC.get(), 0));
@@ -163,6 +169,7 @@ int main() {
         break;
     }
 
+    // Unmap the host buffers from device address space
     HIP_ASSERT(hipHostUnregister(hostC.get()));
     HIP_ASSERT(hipHostUnregister(hostB.get()));
     HIP_ASSERT(hipHostUnregister(hostA.get()));
