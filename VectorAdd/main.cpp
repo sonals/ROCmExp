@@ -2,11 +2,9 @@
 /* Copyright (c) 2021 Xilinx, Inc. All rights reserved */
 /* Based on https://github.com/ROCm-Developer-Tools/HIP-Examples/tree/master/vectorAdd */
 
-#include <assert.h>
-#include <stdio.h>
+#include <cassert>
 #include <algorithm>
 #include <chrono>
-#include <stdlib.h>
 #include <iostream>
 #include <memory>
 #include "hip/hip_runtime_api.h"
@@ -79,6 +77,7 @@ int main() {
     std::unique_ptr<float[]> hostB(new float[LEN]);
     std::unique_ptr<float[]> hostC(new float[LEN]);
 
+    // Initialize input/output vectors
     for (int i = 0; i < LEN; i++) {
         hostB[i] = i;
         hostC[i] = i * 2;
@@ -116,6 +115,7 @@ int main() {
     // Sync device output buffer to host
     HIP_ASSERT(hipMemcpy(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost));
 
+    // Verify output and then reset it for the subsequent test
     int errors = 0;
     for (int i = 0; i < LEN; i++) {
         if (hostA[i] != (hostB[i] + hostC[i])) {
@@ -130,7 +130,7 @@ int main() {
     else
         std::cout << "PASSED" << std::endl;
 
-    // Register our buffer wit ROCm so it is pinned and prepare for access by device
+    // Register our buffer with ROCm so it is pinned and prepare for access by device
     HIP_ASSERT(hipHostRegister(hostA.get(), SIZE, hipHostRegisterDefault));
     HIP_ASSERT(hipHostRegister(hostB.get(), SIZE, hipHostRegisterDefault));
     HIP_ASSERT(hipHostRegister(hostC.get(), SIZE, hipHostRegisterDefault));
@@ -139,7 +139,7 @@ int main() {
     void *tmpB1 = nullptr;
     void *tmpC1 = nullptr;
 
-    // Map the host buffer to device address space
+    // Map the host buffer to device address space so device can access the buffers
     HIP_ASSERT(hipHostGetDevicePointer(&tmpA1, hostA.get(), 0));
     HIP_ASSERT(hipHostGetDevicePointer(&tmpB1, hostB.get(), 0));
     HIP_ASSERT(hipHostGetDevicePointer(&tmpC1, hostC.get(), 0));
@@ -161,11 +161,11 @@ int main() {
     std::cout << '(' << LOOP << " loops, " << delayH << " ms, " << (LOOP * 1000.0)/delayH
               << " ops/s)" << std::endl;
 
-    // The following host memory test fails
+    // Verify the output
     for (int i = 0; i < LEN; i++) {
         if (hostA[i] == (hostB[i] + hostC[i]))
             continue;
-        errors = 1;
+        errors++;
         break;
     }
 
