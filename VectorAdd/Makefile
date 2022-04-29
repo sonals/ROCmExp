@@ -28,6 +28,8 @@ profile: all
 	$(RPROF) --kfd-trace ./a.out
 	$(RPROF) --hsa-trace ./a.out
 	jq '.traceEvents[] | .name' results.json | sort | uniq
+	strace -e trace=ioctl -o strace.log ./a.out
+	grep AMDKFD strace.log | awk '-F,' '{print $$2}' | sort | uniq
 
 
 clean:
