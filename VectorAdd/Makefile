@@ -5,9 +5,9 @@ SRC = main.cpp
 OBJ = main.o
 HIPCC = hipcc
 CXX = g++
-CXXFLAGS = -Wall -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__ -I/opt/rocm-4.2.0/hip/include -I/opt/rocm-4.2.0/llvm/bin/../lib/clang/12.0.0 -I/opt/rocm-4.2.0/hsa/include
+CXXFLAGS = -Wall -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__ -I/opt/rocm/hip/include -I/opt/rocm/llvm/bin/../lib/clang/14.0.0 -I/opt/rocm/hsa/include
 RPROF = rocprof
-LDFLAGS = -L/opt/rocm-4.2.0/hip/lib
+LDFLAGS = -L/opt/rocm/hip/lib
 LDLIBS = -lamdhip64 -lm -lrt
 
 all: a.out kernel.co
