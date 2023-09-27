@@ -62,7 +62,7 @@ public:
 
 int main() {
     hipDeviceProp_t devProp;
-    hipGetDeviceProperties(&devProp, 0);
+    HIP_ASSERT(hipGetDeviceProperties(&devProp, 0));
 
     hipModule_t module;
     hipFunction_t function;
