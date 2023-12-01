@@ -1,0 +1,9 @@
+*.o
+*.co
+*.swp
+*.swo
+.cache
+*~
+TAGS
+compile_commands.json
+main
