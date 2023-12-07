@@ -32,6 +32,7 @@ main: main.o
 	$(HIPCC) $(HIPCCFLAGS) --genco $< -o $@
 
 run: all
+	@echo "LD_LIBRARY_PATH = $(LD_LIBRARY_PATH)"
 	./main
 
 profile: all
