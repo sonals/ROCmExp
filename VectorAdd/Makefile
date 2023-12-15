@@ -3,13 +3,13 @@
 # Copyright (C) 2022-2023 Advanced Micro Devices, Inc. #
 
 ROCM_ROOT = /opt/rocm
-SRC = main.cpp
-OBJ = main.o
+SRC = main.cpp main-stream.cpp
+OBJ = main.o main-stream.o
 HIPCC = $(ROCM_ROOT)/bin/hipcc
 HIPCCFLAGS= --rocm-device-lib-path=/usr/lib/x86_64-linux-gnu/amdgcn/bitcode
 CXX = g++
 CC = g++
-CXXFLAGS = -Wall -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__ -I$(ROCM_ROOT)/include -I$(ROCM_ROOT)/llvm/bin/../lib/clang/14.0.0 -I$(ROCM_ROOT)/hsa/include
+CXXFLAGS = -Wall -Werror -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__ -I$(ROCM_ROOT)/include -I$(ROCM_ROOT)/llvm/bin/../lib/clang/14.0.0 -I$(ROCM_ROOT)/hsa/include
 RPROF = $(ROCM_ROOT)/rocprof
 LDFLAGS = -L$(ROCM_ROOT)/hip/lib
 LDLIBS = -lamdhip64 -lm -lrt
@@ -24,9 +24,11 @@ else
     CXXFLAGS +=-DNDEBUG -O2
 endif
 
-all: main kernel.co nop.co
+all: main main-stream kernel.co nop.co
 
 main: main.o
+
+main-stream: main-stream.o
 
 %.co: %.cpp
 	$(HIPCC) $(HIPCCFLAGS) --genco $< -o $@
@@ -34,6 +36,7 @@ main: main.o
 run: all
 	@echo "LD_LIBRARY_PATH = $(LD_LIBRARY_PATH)"
 	./main
+	./main-stream
 
 profile: all
 	$(RPROF) --hip-trace ./main
@@ -42,10 +45,10 @@ profile: all
 	strace -e trace=ioctl -o strace.log ./main
 	grep AMDKFD strace.log | awk '-F,' '{print $$2}' | sort | uniq
 
-$(COMPILE_DB): main.cpp kernel.cpp nop.cpp Makefile
+$(COMPILE_DB): main.cpp main-stream.cpp kernel.cpp nop.cpp Makefile
 	bear -- make debug=1 all
 
 compdb: $(COMPILE_DB)
 
 clean:
-	rm -f main *.co results.* main.o
+	rm -f main main-stream *.co results.* *.o
