@@ -1,10 +1,16 @@
 /* SPDX-License-Identifier: Apache License 2.0 */
 /* Copyright (C) 2023 Advanced Micro Devices, Inc. */
 
+#include <chrono>
+#include <cstring>
+#include <iostream>
+#include <map>
 #include <stdexcept>
 #include <string>
-#include <chrono>
 #include <system_error>
+
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include "hip/hip_runtime_api.h"
 
@@ -69,4 +75,52 @@ public:
         return _buffer;
     }
 
+};
+
+class HipDevice {
+private:
+    hipDevice_t mDevice;
+    int mIndex;
+    std::map<std::string, hipModule_t> mModuleTable;
+
+public:
+    HipDevice(int index = 0) : mIndex(index) {
+        hipCheck(hipDeviceGet(&mDevice, index));
+    }
+
+    virtual ~HipDevice() {
+        for (auto it : mModuleTable)
+            (void)hipModuleUnload(it.second);
+    }
+
+    void showInfo(std::ostream &stream) const {
+        char name[64];
+        hipCheck(hipDeviceGetName(name, sizeof(name), mDevice));
+        stream << name << std::endl;
+
+        hipUUID_t hid;
+        hipCheck(hipDeviceGetUuid(&hid, mDevice));
+        boost::uuids::uuid bid;
+        std::memcpy(&bid, hid.bytes, sizeof(hid));
+        stream << bid << std::endl;
+
+        hipDeviceProp_t devProp;
+        hipCheck(hipGetDeviceProperties(&devProp, mIndex));
+        stream << devProp.name << std::endl;
+        stream << devProp.totalGlobalMem/0x100000 << " MB" << std::endl;
+        stream << devProp.maxThreadsPerBlock << " Threads" << std::endl;
+    }
+
+    hipFunction_t getFunction(const char *fileName, const char *funcName) {
+        std::map<std::string, hipModule_t>::iterator it = mModuleTable.find(fileName);
+        hipModule_t hmodule;
+        hmodule = it->second;
+        if (it == mModuleTable.end()) {
+            hipCheck(hipModuleLoad(&hmodule, fileName), fileName);
+            mModuleTable.insert(it, std::pair<std::string, hipModule_t>(fileName, hmodule));
+        }
+        hipFunction_t hfunction;
+        hipCheck(hipModuleGetFunction(&hfunction, hmodule, funcName), funcName);
+        return hfunction;
+    }
 };

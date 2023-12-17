@@ -26,7 +26,7 @@ namespace {
 static const int LEN = 0x100000;
 static const int SIZE = LEN * sizeof(float);
 static const int THREADS_PER_BLOCK_X = 32;
-static const int LOOP = 5000;
+static const int LOOP = 1000;
 
 
 void runkernel(hipFunction_t function, void *args[])
@@ -72,34 +72,11 @@ void runkernel(hipFunction_t function, void *args[])
 int mainworker() {
 
     std::cout << "---------------------------------------------------------------------------------\n";
-    hipDevice_t device;
-    hipCheck(hipDeviceGet(&device, 0));
+    HipDevice hdevice;
+    hdevice.showInfo(std::cout);
 
-    char name[64];
-    hipCheck(hipDeviceGetName(name, sizeof(name), device));
-    std::cout << name << std::endl;
-
-    hipUUID_t hid;
-    hipCheck(hipDeviceGetUuid(&hid, device));
-    boost::uuids::uuid bid;
-    std::memcpy(&bid, hid.bytes, sizeof(hid));
-    std::cout << bid << std::endl;
-
-    hipDeviceProp_t devProp;
-    hipCheck(hipGetDeviceProperties(&devProp, 0));
-    std::cout << devProp.name << std::endl;
-    std::cout << devProp.totalGlobalMem/0x100000 << " MB" << std::endl;
-    std::cout << devProp.maxThreadsPerBlock << " Threads" << std::endl;
-
-    hipModule_t module;
-    hipFunction_t function;
-    hipCheck(hipModuleLoad(&module, FILENAME), FILENAME);
-    hipCheck(hipModuleGetFunction(&function, module, KERNELNAME), KERNELNAME);
-
-    hipModule_t nopmodule;
-    hipFunction_t nopfunction;
-    hipCheck(hipModuleLoad(&nopmodule, NOP_FILENAME), NOP_FILENAME);
-    hipCheck(hipModuleGetFunction(&nopfunction, nopmodule, NOP_KERNELNAME), NOP_KERNELNAME);
+    hipFunction_t function = hdevice.getFunction(FILENAME, KERNELNAME);
+    hipFunction_t nopfunction = hdevice.getFunction(NOP_FILENAME, NOP_KERNELNAME);
 
     std::unique_ptr<float[]> hostA(new float[LEN]);
     std::unique_ptr<float[]> hostB(new float[LEN]);
