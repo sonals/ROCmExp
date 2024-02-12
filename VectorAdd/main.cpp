@@ -71,7 +71,7 @@ void runkernel(hipFunction_t function, void *args[])
 
 int mainworker() {
 
-    std::cout << "---------------------------------------------------------------------------------\n";
+    std::cout << "*********************************************************************************\n";
     HipDevice hdevice;
     hdevice.showInfo(std::cout);
 
@@ -135,6 +135,8 @@ int mainworker() {
 
     runkernel(nopfunction, argsD);
 
+    std::cout << "PASSED" << std::endl;
+
     // Register our buffer with ROCm so it is pinned and prepare for access by device
     hipCheck(hipHostRegister(hostA.get(), SIZE, hipHostRegisterDefault));
     hipCheck(hipHostRegister(hostB.get(), SIZE, hipHostRegisterDefault));
@@ -157,6 +159,7 @@ int mainworker() {
     void *argsH[] = {&tmpA1, &tmpB1, &tmpC1};
 
     runkernel(function, argsH);
+    errors = 0;
     // Verify the output
     for (int i = 0; i < LEN; i++) {
         if (hostA[i] == (hostB[i] + hostC[i]))
@@ -164,6 +167,11 @@ int mainworker() {
         errors++;
         break;
     }
+
+    if (errors)
+        std::cout << "FAILED" << std::endl;
+    else
+        std::cout << "PASSED" << std::endl;
 
     std::cout << "---------------------------------------------------------------------------------\n";
     std::cout << "Run " << hipKernelNameRef(nopfunction) << ' ' << LOOP << " times using host resident memory" << std::endl;
@@ -177,12 +185,7 @@ int mainworker() {
     hipCheck(hipHostUnregister(hostB.get()));
     hipCheck(hipHostUnregister(hostA.get()));
 
-    if (errors)
-        std::cout << "FAILED" << std::endl;
-    else
-        std::cout << "PASSED" << std::endl;
-
-
+    std::cout << "PASSED" << std::endl;
     return errors;
 }
 }

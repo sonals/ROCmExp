@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <thread>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -29,7 +30,7 @@ static const int THREADS_PER_BLOCK_X = 32;
 static const int LOOP = 1000;
 
 
-void runkernel(hipFunction_t function, void *args[])
+void runkernel(hipFunction_t function, hipStream_t stream, void *args[])
 {
     const char *name = hipKernelNameRef(function);
     std::cout << "Running " << name << ' ' << LOOP << " times...\n";
@@ -42,41 +43,20 @@ void runkernel(hipFunction_t function, void *args[])
         hipCheck(hipModuleLaunchKernel(function,
                                          globalr, 1, 1,
                                          localr, 1, 1,
-                                         0, 0, args, nullptr), name);
+                                         0, stream, args, nullptr), name);
     }
-    hipCheck(hipDeviceSynchronize());
+    hipCheck(hipStreamSynchronize(stream));
     auto delayD = timer.stop();
 
     std::cout << "Throughput metrics" << std::endl;
     std::cout << '(' << LOOP << " loops, " << delayD << " us, " << (LOOP * 1000000.0)/delayD
               << " ops/s, " << delayD/LOOP << " us average pipelined latency)" << std::endl;
 
-
-    timer.reset();
-    for (int i = 0; i < LOOP; i++) {
-        hipCheck(hipModuleLaunchKernel(function,
-                                         globalr, 1, 1,
-                                         localr, 1, 1,
-                                         0, 0, args, nullptr), name);
-        hipCheck(hipDeviceSynchronize());
-    }
-
-    delayD = timer.stop();
-
-    std::cout << "Latency metrics" << std::endl;
-    std::cout << '(' << LOOP << " loops, " << delayD << " us, " << (LOOP * 1000000.0)/delayD
-              << " ops/s, " << delayD/LOOP << " us average start-to-finish latency)" << std::endl;
-
 }
 
-int mainworker() {
+int mainworkerthread(hipFunction_t function, hipStream_t stream, bool validate = true) {
 
-    std::cout << "---------------------------------------------------------------------------------\n";
-    HipDevice hdevice;
-    hdevice.showInfo(std::cout);
-
-    hipFunction_t function = hdevice.getFunction(FILENAME, KERNELNAME);
-    hipFunction_t nopfunction = hdevice.getFunction(NOP_FILENAME, NOP_KERNELNAME);
+    std::cout << "*********************************************************************************\n";
 
     std::unique_ptr<float[]> hostA(new float[LEN]);
     std::unique_ptr<float[]> hostB(new float[LEN]);
@@ -94,8 +74,8 @@ int mainworker() {
     DeviceBO<float> deviceC(LEN);
 
     // Sync host buffers to device
-    hipCheck(hipMemcpy(deviceB.get(), hostB.get(), SIZE, hipMemcpyHostToDevice));
-    hipCheck(hipMemcpy(deviceC.get(), hostC.get(), SIZE, hipMemcpyHostToDevice));
+    hipCheck(hipMemcpyWithStream(deviceB.get(), hostB.get(), SIZE, hipMemcpyHostToDevice, stream));
+    hipCheck(hipMemcpyWithStream(deviceC.get(), hostC.get(), SIZE, hipMemcpyHostToDevice, stream));
 
     void *argsD[] = {&deviceA.get(), &deviceB.get(), &deviceC.get()};
 
@@ -106,34 +86,26 @@ int mainworker() {
     std::cout << "Device buffers: " << deviceA.get() << ", "
               << deviceB.get() << ", " << deviceC.get() << std::endl;
 
-    runkernel(function, argsD);
+    runkernel(function, stream, argsD);
     // Sync device output buffer to host
-    hipCheck(hipMemcpy(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost));
+    hipCheck(hipMemcpyWithStream(hostA.get(), deviceA.get(), SIZE, hipMemcpyDeviceToHost, stream));
 
     // Verify output and then reset it for the subsequent test
     int errors = 0;
-    for (int i = 0; i < LEN; i++) {
-        if (hostA[i] != (hostB[i] + hostC[i])) {
-            errors++;
-            break;
+    if (validate) {
+        for (int i = 0; i < LEN; i++) {
+            if (hostA[i] != (hostB[i] + hostC[i])) {
+                errors++;
+                break;
+            }
+            hostA[i] = 0.0;
         }
-        hostA[i] = 0.0;
     }
 
     if (errors)
         std::cout << "FAILED" << std::endl;
     else
         std::cout << "PASSED" << std::endl;
-
-    std::cout << "---------------------------------------------------------------------------------\n";
-
-    std::cout << "Run " << hipKernelNameRef(nopfunction) << ' ' << LOOP << " times using device resident memory" << std::endl;
-    std::cout << "Host buffers: " << hostA.get() << ", "
-              << hostB.get() << ", " << hostC.get() << std::endl;
-    std::cout << "Device buffers: " << deviceA.get() << ", "
-              << deviceB.get() << ", " << deviceC.get() << std::endl;
-
-    runkernel(nopfunction, argsD);
 
     // Register our buffer with ROCm so it is pinned and prepare for access by device
     hipCheck(hipHostRegister(hostA.get(), SIZE, hipHostRegisterDefault));
@@ -156,21 +128,17 @@ int mainworker() {
 
     void *argsH[] = {&tmpA1, &tmpB1, &tmpC1};
 
-    runkernel(function, argsH);
-    // Verify the output
-    for (int i = 0; i < LEN; i++) {
-        if (hostA[i] == (hostB[i] + hostC[i]))
-            continue;
-        errors++;
+    runkernel(function, stream, argsH);
+
+    if (validate) {
+        // Verify the output
+        for (int i = 0; i < LEN; i++) {
+            if (hostA[i] == (hostB[i] + hostC[i]))
+                continue;
+            errors++;
         break;
+        }
     }
-
-    std::cout << "---------------------------------------------------------------------------------\n";
-    std::cout << "Run " << hipKernelNameRef(nopfunction) << ' ' << LOOP << " times using host resident memory" << std::endl;
-    std::cout << "Device mapped host buffers: " << tmpA1 << ", "
-              << tmpB1 << ", " << tmpC1 << std::endl;
-
-    runkernel(nopfunction, argsH);
 
     // Unmap the host buffers from device address space
     hipCheck(hipHostUnregister(hostC.get()));
@@ -182,8 +150,31 @@ int mainworker() {
     else
         std::cout << "PASSED" << std::endl;
 
-
     return errors;
+}
+
+int mainworker() {
+    HipDevice hdevice;
+    hdevice.showInfo(std::cout);
+
+    hipFunction_t vaddfunction = hdevice.getFunction(FILENAME, KERNELNAME);
+    hipFunction_t nopfunction = hdevice.getFunction(NOP_FILENAME, NOP_KERNELNAME);
+
+    hipStream_t vaddstream;
+    hipCheck(hipStreamCreateWithFlags(&vaddstream, hipStreamNonBlocking));
+
+    hipStream_t nopstream;
+    hipCheck(hipStreamCreateWithFlags(&nopstream, hipStreamNonBlocking));
+
+    std::thread vaddthread = std::thread(mainworkerthread, vaddfunction, vaddstream, true);
+    std::thread nopthread = std::thread(mainworkerthread, nopfunction, nopstream, false);
+
+    vaddthread.join();
+    nopthread.join();
+
+//    mainworkerthread(vaddfunction, vaddstream, true);
+//    mainworkerthread(nopfunction, nopstream, false);
+    return 0;
 }
 }
 
